@@ -68,11 +68,13 @@ public class TestArrowFlightNativeQueries
 
         allocator = new RootAllocator(Long.MAX_VALUE);
         Location location = Location.forGrpcTls("localhost", serverPort);
-        File certChainFile = new File("src/test/resources/server.crt");
-        File privateKeyFile = new File("src/test/resources/server.key");
+        File certChainFile = new File("src/test/resources/mtls_copy/server.crt");
+        File privateKeyFile = new File("src/test/resources/mtls_copy/server.key");
+        File caCertStreamForServer = new File("src/test/resources/mtls_copy/ca.crt");
 
         server = FlightServer.builder(allocator, location, new TestingArrowProducer(allocator))
                 .useTls(certChainFile, privateKeyFile)
+                .useMTlsClientVerification(caCertStreamForServer)
                 .build();
 
         server.start();
@@ -99,9 +101,11 @@ public class TestArrowFlightNativeQueries
         log.info("Using PRESTO_SERVER binary at %s", prestoServerPath);
 
         ImmutableMap<String, String> coordinatorProperties = ImmutableMap.of("native-execution-enabled", "true");
-        String flightCertPath = Paths.get("src/test/resources/server.crt").toAbsolutePath().toString();
+        String flightCertPath = Paths.get("src/test/resources/mtls_copy/server.crt").toAbsolutePath().toString();
+        String clientCertPath = Paths.get("src/test/resources/mtls_copy/client.crt").toAbsolutePath().toString();
+        String clientKeyPath = Paths.get("src/test/resources/mtls_copy/client.key").toAbsolutePath().toString();
 
-        return ArrowFlightQueryRunner.createQueryRunner(serverPort, getNativeWorkerSystemProperties(), coordinatorProperties, getExternalWorkerLauncher(prestoServerPath.toString(), serverPort, flightCertPath));
+        return ArrowFlightQueryRunner.createQueryRunner(serverPort, getNativeWorkerSystemProperties(), coordinatorProperties, getExternalWorkerLauncher(prestoServerPath.toString(), serverPort, flightCertPath, clientCertPath, clientKeyPath));
     }
 
     @Override
@@ -338,7 +342,7 @@ public class TestArrowFlightNativeQueries
                 .build();
     }
 
-    public static Optional<BiFunction<Integer, URI, Process>> getExternalWorkerLauncher(String prestoServerPath, int flightServerPort, String flightCertPath)
+    public static Optional<BiFunction<Integer, URI, Process>> getExternalWorkerLauncher(String prestoServerPath, int flightServerPort, String flightCertPath, String clientCertPath, String clientKeyPath)
     {
         return
                 Optional.of((workerIndex, discoveryUri) -> {
@@ -366,10 +370,12 @@ public class TestArrowFlightNativeQueries
 
                         Files.write(catalogDirectoryPath.resolve(format("%s.properties", ARROW_FLIGHT_CATALOG)),
                                 format("connector.name=%s\n" +
-                                       "arrow-flight.server=localhost\n" +
-                                       "arrow-flight.server.port=%d\n" +
-                                       "arrow-flight.server-ssl-enabled=true\n" +
-                                       "arrow-flight.server-ssl-certificate=%s", ARROW_FLIGHT_CONNECTOR, flightServerPort, flightCertPath).getBytes());
+                                        "arrow-flight.server=localhost\n" +
+                                        "arrow-flight.server.port=%d\n" +
+                                        "arrow-flight.server-ssl-enabled=true\n" +
+                                        "arrow-flight.server-ssl-certificate=%s\n" +
+                                        "arrow-flight.client-ssl-certificate=%s\n" +
+                                        "arrow-flight.client-ssl-key=%s\n", ARROW_FLIGHT_CONNECTOR, flightServerPort, flightCertPath, clientCertPath, clientKeyPath).getBytes());
 
                         // Disable stack trace capturing as some queries (using TRY) generate a lot of exceptions.
                         return new ProcessBuilder(prestoServerPath, "--logtostderr=1", "--v=1")

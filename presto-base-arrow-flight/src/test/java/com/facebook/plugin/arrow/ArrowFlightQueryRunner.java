@@ -96,7 +96,9 @@ public class ArrowFlightQueryRunner
                     .putAll(catalogProperties)
                     .put("arrow-flight.server", "localhost")
                     .put("arrow-flight.server-ssl-enabled", "true")
-                    .put("arrow-flight.server-ssl-certificate", "src/test/resources/server.crt");
+                    .put("arrow-flight.server-ssl-certificate", "src/test/resources/mtls/server.crt")
+                    .put("arrow-flight.client-ssl-certificate", "src/test/resources/mtls/client.crt")
+                    .put("arrow-flight.client-ssl-key", "src/test/resources/mtls/client.key");
 
             queryRunner.createCatalog(ARROW_FLIGHT_CATALOG, ARROW_FLIGHT_CONNECTOR, properties.build());
 
@@ -129,8 +131,10 @@ public class ArrowFlightQueryRunner
         Location serverLocation = Location.forGrpcTls("localhost", 9443);
         File certChainFile = new File("src/test/resources/server.crt");
         File privateKeyFile = new File("src/test/resources/server.key");
+        File caCertFile = new File("src/test/resources/mtls/ca.crt");
         FlightServer server = FlightServer.builder(allocator, serverLocation, new TestingArrowProducer(allocator))
                 .useTls(certChainFile, privateKeyFile)
+                .useMTlsClientVerification(caCertFile)
                 .build();
 
         server.start();
